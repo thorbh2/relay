@@ -1,0 +1,21 @@
+{
+  "project": "12-relay",
+  "name": "Relay",
+  "network": "studionet",
+  "chainId": 61999,
+  "rpc": "https://studio.genlayer.com/api",
+  "explorer": "https://explorer-studio.genlayer.com",
+  "contractAddress": "0xC2602425c2324f577754fdb17cae714Ce30b6Af5",
+  "deployTxHash": "0x5b4c268e780fd7a8f1514f243e2d81457f554b3792d8ffd2444e11e3600a89e7",
+  "contractExplorer": "https://explorer-studio.genlayer.com/contracts/0xC2602425c2324f577754fdb17cae714Ce30b6Af5",
+  "deployer": "0xA7c1997c7EE6A23091892313F46395f388aee700",
+  "deployedAt": "2026-06-24T17:44:10.737Z",
+  "statusName": 7,
+  "smoke": {
+    "open_campaign": "0xf49d68735a3779d40b48266c1849308d5a42a37bc37fad65eb61982ac4dc44aa",
+    "pledge": "0x14aa9a6708cb39c7750a730dc77b16aeace539d3a4ab55c120c4302200da630c",
+    "submit_milestone": "0x901da77f2645c2c17dabb14d03b035938e20862f1db5c345f2392d1a58191973",
+    "verify_milestone": "0x5e970956cf397f57293b12534c7c6959e0310d9d671a1c9af23692d78fdeccdb",
+    "campaignId": "0"
+  }
+}

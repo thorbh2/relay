@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Relay — Crowdfunding that can't rug</title>
+<meta name="description" content="Milestone-gated crowdfunding on GenLayer. Backers pledge into escrow; each tranche releases only when a validator set reads the proof and agrees the milestone shipped. If a milestone fails, backers reclaim the rest." />
+<link rel="stylesheet" href="./styles.css?v=6">
+<link rel="preconnect" href="https://rsms.me/">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top"><span class="emoji">🛰️</span> Relay</a>
+    <div class="nav-mid">
+      <a href="#how">How it works</a>
+      <a href="#campaigns">Campaigns</a>
+      <a href="#why">Why Relay</a>
+    </div>
+    <div class="nav-end">
+      <span id="walletslot"><button class="btn ghost sm" id="connectBtn">Connect</button></span>
+      <button class="btn primary sm" id="navPostBtn"><i class="ph-bold ph-plus"></i> New campaign</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <span class="kicker">Milestone-gated crowdfunding · GenLayer</span>
+      <h1>Crowdfunding that can't rug.</h1>
+      <p class="lede">Backers pledge into escrow and the money stays locked. A campaign's funds release one tranche at a time — and only after a validator set reads the proof and agrees the milestone actually shipped. If a milestone fails, backers reclaim everything that hasn't been released. Trust the rules, not the founder.</p>
+      <div class="hero-cta">
+        <button class="btn primary lg" id="heroPostBtn"><i class="ph-bold ph-plus"></i> Start a campaign</button>
+        <a class="btn soft lg" href="#campaigns">Browse campaigns</a>
+      </div>
+    </div>
+    <div class="hero-visual"><canvas id="blocksCanvas"></canvas></div>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- HOW (Notion callout + numbered) -->
+  <section class="how" id="how">
+    <div class="callout"><span class="callout-ic">💡</span><p>Relay splits a goal into milestones. Each milestone holds its own slice of the money, and that slice is only paid when the work behind it is verified on-chain.</p></div>
+    <h2 class="h2">How a campaign pays out</h2>
+    <ol class="steps">
+      <li><span class="sn">1</span><div><b>Pledge into escrow.</b> Backers fund the goal. Every pledge is held by the contract — nobody, including the creator, can touch it yet.</div></li>
+      <li><span class="sn">2</span><div><b>Submit milestone proof.</b> When the goal is met, the creator submits a public URL proving the first milestone is done.</div></li>
+      <li><span class="sn">3</span><div><b>Validators verify, the tranche releases.</b> The contract reads the proof and a validator set agrees. Delivered → that tranche pays the creator. Not delivered → the campaign fails and backers reclaim the rest.</div></li>
+    </ol>
+  </section>
+
+  <!-- CAMPAIGNS -->
+  <section class="campaigns" id="campaigns">
+    <div class="sec-row">
+      <h2 class="h2">Campaigns</h2>
+      <div class="sec-meta">
+        <span class="chip"><b id="stTotal">0</b> live</span>
+        <span class="chip"><b id="stRaised">0</b> GEN pledged</span>
+        <span class="chip"><b id="stReleased">0</b> GEN released</span>
+        <button class="btn soft sm" id="refreshBtn"><i class="ph-bold ph-arrows-clockwise"></i> Sync</button>
+      </div>
+    </div>
+    <div class="camp-list" id="campList"><div class="c-empty">Reading the chain…</div></div>
+  </section>
+
+  <!-- WHY -->
+  <section class="why" id="why">
+    <h2 class="h2">Why back through Relay</h2>
+    <div class="why-grid">
+      <div class="why-card"><span class="wc-ic">🔒</span><h3>Money stays in escrow</h3><p>Pledges are locked in the contract. Funds move only when a milestone is verified — never as one upfront lump.</p></div>
+      <div class="why-card"><span class="wc-ic">✅</span><h3>Proof, not promises</h3><p>Each milestone is checked against a public proof URL by a validator set. Saying it's done isn't enough — the page has to show it.</p></div>
+      <div class="why-card"><span class="wc-ic">↩️</span><h3>Refunds if it stalls</h3><p>If a milestone fails verification, the campaign ends and every backer reclaims their share of the unreleased funds.</p></div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="cta-card">
+      <h2>Raising for something real?</h2>
+      <p>Break it into milestones, let backers fund it, and prove each step. One transaction on GenLayer studionet.</p>
+      <button class="btn primary lg" id="ctaPostBtn"><i class="ph-bold ph-plus"></i> Start a campaign</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <a class="brand" href="#top"><span class="emoji">🛰️</span> Relay</a>
+    <div class="foot-links">
+      <a href="#how">How it works</a><a href="#campaigns">Campaigns</a><a href="#why">Why Relay</a>
+      <a href="https://docs.genlayer.com/" target="_blank" rel="noopener">GenLayer docs ↗</a>
+      <a id="contractLink" href="https://explorer-studio.genlayer.com/contracts/0xC2602425c2324f577754fdb17cae714Ce30b6Af5" target="_blank" rel="noopener">Contract 0xC260...6Af5 -></a>
+    </div>
+    <span class="foot-net"><span class="net-dot"></span>studionet · live</span>
+  </div>
+  <div class="foot-base">Relay · milestone-gated crowdfunding on GenLayer studionet</div>
+</footer>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-h"><h3 id="drawerTitle">New campaign</h3><button class="icon-btn" id="closeDrawer" aria-label="Close"><i class="ph-bold ph-x"></i></button></div>
+  <div class="drawer-b" id="drawerBody"></div>
+</aside>
+<div id="log"></div>
+<script type="module" src="./app.js?v=1"></script>
+</body>
+</html>
