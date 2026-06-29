@@ -79,7 +79,7 @@ Relay ships as a standalone static app:
 From the private workspace:
 
 ```powershell
-cd C:\Users\aspronim\Desktop\design-skills
+cd <private-workspace-root>
 npm run preview:start
 npm run preview:project -- 12-relay
 ```
@@ -93,7 +93,7 @@ http://localhost:8080/12-relay/
 ## Publish / Redeploy
 
 ```powershell
-cd C:\Users\aspronim\Desktop\design-skills
+cd <private-workspace-root>
 npm run publish:project -- -Project 12-relay -Repo https://github.com/thorbh2/relay.git
 ```
 
