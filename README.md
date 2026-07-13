@@ -10,9 +10,13 @@ This repository is a public proof package: it includes the product UI, the deplo
 | --- | --- |
 | App | https://relay-zeta-blush.vercel.app |
 | GitHub | https://github.com/thorbh2/relay |
-| Contract | https://explorer-studio.genlayer.com/contracts/0xC2602425c2324f577754fdb17cae714Ce30b6Af5 |
-| Deploy tx | https://explorer-studio.genlayer.com/tx/0x5b4c268e780fd7a8f1514f243e2d81457f554b3792d8ffd2444e11e3600a89e7 |
-| Vercel inspect | https://vercel.com/aspros-projects-07dbbeb8/relay/GRkuu313spKSkWgMuaicd2ne3m7u |
+| Contract | https://explorer-studio.genlayer.com/contracts/0x51E0b7209a36ce55c4F0E298486fb085B83c190e |
+| Deploy tx | https://explorer-studio.genlayer.com/tx/0xf0360c4cdcf24271141dce722eacca7ac16c06cbbd43e124c1af87164fa17957 |
+| Vercel inspect | https://vercel.com/aspros-projects-07dbbeb8/relay/3TgB7fPReN9x99FtgFHWrQSrBCP3 |
+
+## Escrow Corrections
+
+Milestone verification records an approval but never transfers the tranche by itself. Release is a separate guarded action and is blocked by pending challenges or appeals. Validators judge an immutable proof snapshot, accepted reviews alter the release state, overfunded pledge value is returned immediately, and failed campaigns expose a deterministic backer refund path. The interface now provides each submitted write action; `tests/test_v2_invariants.py` verifies the escrow boundaries.
 
 ## Why Relay Exists
 
@@ -31,7 +35,7 @@ The frontend keeps the original product experience, while the contract adds a re
 | Read methods | multiple |
 | GenLayer features | live web rendering, LLM execution, validator-comparative consensus |
 | Deployment wallet | 0xA7c1997c7EE6A23091892313F46395f388aee700 |
-| Contract address | 0xC2602425c2324f577754fdb17cae714Ce30b6Af5 |
+| Contract address | 0x51E0b7209a36ce55c4F0E298486fb085B83c190e |
 
 Architecture note:
 

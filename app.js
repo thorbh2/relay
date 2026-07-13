@@ -1,10 +1,10 @@
 import { makeReader, write, connectWallet, activeAccount, balanceOf, short, toGen, GEN, fmtErr }
   from "./shared/genlayer-lite.js";
 
-const CONTRACT = "0xC2602425c2324f577754fdb17cae714Ce30b6Af5";
+const CONTRACT = "0x51E0b7209a36ce55c4F0E298486fb085B83c190e";
 const { read } = makeReader(CONTRACT);
 const C_FUNDING = 0, C_FUNDED = 1, C_COMPLETED = 2, C_FAILED = 3;
-const M_LOCKED = 0, M_SUBMITTED = 1, M_RELEASED = 2, M_REJECTED = 3;
+const M_LOCKED = 0, M_SUBMITTED = 1, M_RELEASED = 2, M_REJECTED = 3, M_APPROVED = 4;
 const CSTAT = ["Funding", "In progress", "Completed", "Failed"];
 const CCLS = ["cs-funding", "cs-funded", "cs-completed", "cs-failed"];
 let account = null, campaigns = [];
@@ -49,8 +49,8 @@ async function load() {
 
 function checkRow(m) {
   const st = Number(m.status);
-  const cls = st === M_RELEASED ? "done" : st === M_REJECTED ? "rejected" : st === M_SUBMITTED ? "submitted" : "";
-  const mark = st === M_RELEASED ? "\u2713" : st === M_REJECTED ? "\u2715" : st === M_SUBMITTED ? "\u22ef" : "";
+  const cls = st === M_RELEASED ? "done" : st === M_REJECTED ? "rejected" : st === M_SUBMITTED || st === M_APPROVED ? "submitted" : "";
+  const mark = st === M_RELEASED ? "\u2713" : st === M_REJECTED ? "\u2715" : st === M_APPROVED ? "\u2713" : st === M_SUBMITTED ? "\u22ef" : "";
   return `<div class="check ${st === M_RELEASED ? "done" : ""}"><span class="check-box ${cls}">${mark}</span><span class="check-txt">${esc(m.description)}</span><span class="check-amt">${toGen(m.amount)} GEN</span></div>`;
 }
 
@@ -111,12 +111,13 @@ function openDetail(id) {
   if (st === C_FUNDING) actions = `<label>Pledge amount (GEN)</label><input id="pAmount" type="number" min="0" step="1" value="5" /><button class="btn blue block" id="pledgeBtn"><i class="ph-bold ph-hand-coins"></i> Pledge</button>`;
   else if (st === C_FUNDED && next) {
     if (Number(next.status) === M_LOCKED) actions = `<div class="hint" style="margin-top:4px">Next milestone: <b style="color:var(--ink)">${esc(next.description)}</b></div><label>Proof URL ${isCreator ? "" : "(creator only)"}</label><input id="proofUrl" placeholder="https://github.com/you/proof" /><button class="btn primary block" id="submitBtn"><i class="ph-bold ph-upload-simple"></i> Submit milestone proof</button>`;
-    else if (Number(next.status) === M_SUBMITTED) actions = `<div class="hint" style="margin-top:4px">Proof submitted for: <b style="color:var(--ink)">${esc(next.description)}</b></div><button class="btn primary block" id="verifyBtn"><i class="ph-bold ph-shield-check"></i> Run AI verification</button><div class="hint" style="text-align:center;margin-top:8px">Validators read the proof URL against the milestone. Calls a real LLM; passing releases the tranche.</div>`;
+    else if (Number(next.status) === M_SUBMITTED) actions = `<div class="hint" style="margin-top:4px">Proof submitted for: <b style="color:var(--ink)">${esc(next.description)}</b></div><button class="btn primary block" id="verifyBtn"><i class="ph-bold ph-shield-check"></i> Run AI verification</button><div class="hint" style="text-align:center;margin-top:8px">Verification records a decision. Funds remain locked until disputes close and release is called.</div>`;
+    else if ([M_APPROVED, M_REJECTED].includes(Number(next.status))) actions = `<div class="hint">Decision recorded. File any counter-evidence before release or failure.</div><label>Dispute reason</label><textarea id="reviewReason" placeholder="Explain what the decision missed"></textarea><label>Evidence URL</label><input id="reviewUrl" placeholder="https://counter-evidence.example"/><button class="btn blue block" id="challengeBtn">File milestone challenge</button>${isCreator ? `<button class="btn blue block" id="appealBtn">File creator appeal</button>` : ""}${Number(next.status) === M_APPROVED ? `<button class="btn primary block" id="releaseBtn">Release approved tranche</button>` : `<button class="btn primary block" id="failBtn">Finalize failure and enable refunds</button>`}`;
   } else if (st === C_FAILED) actions = `<button class="btn blue block" id="refundBtn"><i class="ph-bold ph-arrow-u-up-left"></i> Reclaim my pledge</button><div class="hint" style="text-align:center;margin-top:8px">Refunds your share of the unreleased funds.</div>`;
 
   const checks = c.milestones.map((m) => {
     const ms = Number(m.status);
-    const tag = ms === M_RELEASED ? `<span style="color:var(--green)">Released</span>` : ms === M_REJECTED ? `<span style="color:var(--red)">Rejected</span>` : ms === M_SUBMITTED ? `<span style="color:var(--amber)">In review</span>` : `<span style="color:var(--faint)">Locked</span>`;
+    const tag = ms === M_RELEASED ? `<span style="color:var(--green)">Released</span>` : ms === M_APPROVED ? `<span style="color:var(--green)">Approved, funds locked</span>` : ms === M_REJECTED ? `<span style="color:var(--red)">Rejected, appealable</span>` : ms === M_SUBMITTED ? `<span style="color:var(--amber)">In review</span>` : `<span style="color:var(--faint)">Locked</span>`;
     return `<div class="d-check">${checkRow(m)}</div><div class="kv" style="border:none;padding:4px 0 10px"><span class="k">${tag}</span>${m.rationale ? `<span class="v" style="font-size:12.5px;color:var(--grey)">${esc(m.rationale)}</span>` : ""}</div>`;
   }).join("");
 
@@ -134,6 +135,12 @@ function openDetail(id) {
   else if (st === C_FUNDED && next) {
     if (Number(next.status) === M_LOCKED && $("submitBtn")) $("submitBtn").onclick = () => doSubmit(id);
     else if (Number(next.status) === M_SUBMITTED && $("verifyBtn")) $("verifyBtn").onclick = () => doVerify(id);
+    else if ([M_APPROVED, M_REJECTED].includes(Number(next.status))) {
+      $("challengeBtn").onclick = () => doDispute("file_milestone_challenge", [id, nextIdx], "Challenge filed.");
+      if ($("appealBtn")) $("appealBtn").onclick = () => doDispute("file_campaign_appeal", [id], "Appeal filed.");
+      if ($("releaseBtn")) $("releaseBtn").onclick = () => doAction("release_milestone", [id], "Tranche released.");
+      if ($("failBtn")) $("failBtn").onclick = () => doAction("fail_campaign", [id], "Campaign failure finalized; refunds enabled.");
+    }
   } else if (st === C_FAILED && $("refundBtn")) $("refundBtn").onclick = () => doRefund(id);
 }
 
@@ -177,6 +184,17 @@ async function doRefund(id) {
   const btn = $("refundBtn"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> refunding';
   try { await ensureWallet(); await write(CONTRACT, "refund", [id]); toast("Refund claimed.", "ok"); closeDrawer(); await load(); }
   catch (e) { toast(fmtErr(e), "err"); btn.disabled = false; btn.textContent = "Reclaim my pledge"; }
+}
+
+async function doDispute(method, prefix, success) {
+  const reason = $("reviewReason").value.trim(), url = $("reviewUrl").value.trim();
+  if (!reason || !url) return toast("Dispute reason and evidence URL are required.", "err");
+  await doAction(method, [...prefix, reason, url], success);
+}
+
+async function doAction(method, args, success) {
+  try { await ensureWallet(); await write(CONTRACT, method, args); toast(success, "ok"); closeDrawer(); await load(); }
+  catch (e) { toast(fmtErr(e), "err"); }
 }
 
 $("heroPostBtn").onclick = openNew;

@@ -32,6 +32,7 @@ M_LOCKED = 0
 M_SUBMITTED = 1
 M_RELEASED = 2
 M_REJECTED = 3
+M_APPROVED = 4
 
 
 @allow_storage
@@ -56,6 +57,7 @@ class Milestone:
     description: str
     amount: u256
     proof_url: str
+    proof_snapshot: str
     status: u8
     rationale: str
 
@@ -76,9 +78,10 @@ class Relay(gl.Contract):
     audits: DynArray[str]
     challenges: DynArray[str]
     appeals: DynArray[str]
+    admin: Address
 
     def __init__(self) -> None:
-        pass
+        self.admin = gl.message.sender_address
 
     @gl.public.write
     def open_campaign(self, title: str, summary: str, milestones_json: str) -> int:
@@ -112,6 +115,7 @@ class Relay(gl.Contract):
             m.description = desc
             m.amount = u256(amount)
             m.proof_url = ""
+            m.proof_snapshot = ""
             m.status = u8(M_LOCKED)
             m.rationale = ""
             goal += amount
@@ -134,17 +138,24 @@ class Relay(gl.Contract):
         c = self._get_campaign(campaign_id)
         if c.status != C_FUNDING:
             raise gl.vm.UserError("campaign is not accepting pledges")
-        v = gl.message.value
-        if v == u256(0):
+        sent = gl.message.value
+        if sent == u256(0):
             raise gl.vm.UserError("pledge some GEN")
-        c.raised = c.raised + v
+        remaining = int(c.goal) - int(c.raised)
+        if remaining <= 0:
+            raise gl.vm.UserError("campaign is already fully funded")
+        accepted = min(int(sent), remaining)
+        excess = int(sent) - accepted
+        c.raised = c.raised + u256(accepted)
         p = self.pledges.append_new_get()
         p.campaign_id = u256(campaign_id)
         p.backer = gl.message.sender_address
-        p.amount = v
+        p.amount = u256(accepted)
         p.refunded = u8(0)
         if c.raised >= c.goal:
             c.status = u8(C_FUNDED)
+        if excess > 0:
+            self._pay(gl.message.sender_address, u256(excess))
 
     @gl.public.write
     def submit_milestone(self, campaign_id: int, proof_url: str) -> None:
@@ -160,6 +171,7 @@ class Relay(gl.Contract):
         if m.status != M_LOCKED:
             raise gl.vm.UserError("milestone not awaiting submission")
         m.proof_url = proof_url
+        m.proof_snapshot = ""
         m.status = u8(M_SUBMITTED)
 
     @gl.public.write
@@ -191,29 +203,27 @@ class Relay(gl.Contract):
                 "Does the proof page credibly show this specific milestone was "
                 "actually delivered? Judge strictly on evidence in the page. Reply "
                 'with ONLY JSON: {"delivered": true} if it clearly was, '
-                '{"delivered": false} if not, plus a short "reason".'
+                '{"delivered": false} if not, plus a short "reason" and an '
+                '"evidenceExcerpt" copied from the page (maximum 1000 characters).'
             )
             return gl.nondet.exec_prompt(prompt)
 
         def validator_fn(leader_res) -> bool:
             if not isinstance(leader_res, gl.vm.Return):
                 return False
-            return self._decision_of(leader_res.calldata)[0] == self._decision_of(leader_fn())[0]
+            first = self._decision_of(leader_res.calldata)
+            second = self._decision_of(leader_fn())
+            return first[0] == second[0]
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-        delivered, reason = self._decision_of(result)
+        delivered, reason, snapshot = self._decision_of(result)
         m.rationale = reason[:300]
+        m.proof_snapshot = snapshot[:1000]
 
         if delivered:
-            m.status = u8(M_RELEASED)
-            c.released = c.released + m.amount
-            c.ms_done = u256(int(c.ms_done) + 1)
-            self._pay(c.creator, m.amount)
-            if int(c.ms_done) >= int(c.ms_total):
-                c.status = u8(C_COMPLETED)
+            m.status = u8(M_APPROVED)
         else:
             m.status = u8(M_REJECTED)
-            c.status = u8(C_FAILED)
 
     @gl.public.write
     def refund(self, campaign_id: int) -> None:
@@ -268,6 +278,7 @@ class Relay(gl.Contract):
             "description": m.description,
             "amount": str(m.amount),
             "proof_url": m.proof_url,
+            "proof_snapshot": m.proof_snapshot,
             "status": int(m.status),
             "rationale": m.rationale,
         }
@@ -344,6 +355,8 @@ class Relay(gl.Contract):
         if index < 0 or index >= int(c.ms_total):
             raise gl.vm.UserError("no such milestone")
         m = self.milestones[int(c.ms_start) + index]
+        if int(m.status) not in (M_APPROVED, M_REJECTED):
+            raise gl.vm.UserError("milestone has no review decision to challenge")
         clean_claim = claim.strip()[:1000]
         clean_url = self._clean_url(evidence_url)
         if len(clean_claim) == 0:
@@ -361,6 +374,11 @@ class Relay(gl.Contract):
     @gl.public.write
     def file_campaign_appeal(self, campaign_id: int, reason: str, evidence_url: str) -> str:
         c = self._get_campaign(campaign_id)
+        if gl.message.sender_address != c.creator:
+            raise gl.vm.UserError("only the creator can appeal")
+        idx = int(c.ms_start) + int(c.ms_done)
+        if idx >= len(self.milestones) or int(self.milestones[idx].status) != M_REJECTED:
+            raise gl.vm.UserError("appeal requires a rejected milestone")
         clean_reason = reason.strip()[:1000]
         clean_url = self._clean_url(evidence_url)
         if len(clean_reason) == 0:
@@ -373,6 +391,89 @@ class Relay(gl.Contract):
         self._append_audit("file_appeal", campaign_id, -1, gl.message.sender_address.as_hex,
                            clean_reason, clean_url, int(c.status), int(c.status))
         return aid
+
+    @gl.public.write
+    def resolve_milestone_challenge(self, challenge_id: str, accepted: bool) -> str:
+        self._require_admin()
+        idx = int(challenge_id)
+        if idx < 0 or idx >= len(self.challenges):
+            raise gl.vm.UserError("no such challenge")
+        row = json.loads(self.challenges[idx])
+        if row.get("ruling") != "pending":
+            raise gl.vm.UserError("challenge already resolved")
+        campaign_id = int(row["campaignId"])
+        milestone_index = int(row["milestoneIndex"])
+        c = self._get_campaign(campaign_id)
+        m = self.milestones[int(c.ms_start) + milestone_index]
+        before = int(m.status)
+        row["ruling"] = "accepted" if accepted else "rejected"
+        if accepted:
+            m.status = u8(M_REJECTED if before == M_APPROVED else M_APPROVED)
+        self.challenges[idx] = json.dumps(row, sort_keys=True)
+        self._append_audit("resolve_challenge", campaign_id, milestone_index,
+                           gl.message.sender_address.as_hex, row["ruling"], row.get("evidenceUrl", ""),
+                           before, int(m.status))
+        return row["ruling"]
+
+    @gl.public.write
+    def resolve_campaign_appeal(self, appeal_id: str, granted: bool) -> str:
+        self._require_admin()
+        idx = int(appeal_id)
+        if idx < 0 or idx >= len(self.appeals):
+            raise gl.vm.UserError("no such appeal")
+        row = json.loads(self.appeals[idx])
+        if row.get("ruling") != "pending":
+            raise gl.vm.UserError("appeal already resolved")
+        campaign_id = int(row["campaignId"])
+        c = self._get_campaign(campaign_id)
+        milestone_index = int(c.ms_done)
+        m = self.milestones[int(c.ms_start) + milestone_index]
+        before = int(m.status)
+        row["ruling"] = "granted" if granted else "denied"
+        if granted:
+            m.status = u8(M_APPROVED)
+        self.appeals[idx] = json.dumps(row, sort_keys=True)
+        self._append_audit("resolve_appeal", campaign_id, milestone_index,
+                           gl.message.sender_address.as_hex, row["ruling"], row.get("evidenceUrl", ""),
+                           before, int(m.status))
+        return row["ruling"]
+
+    @gl.public.write
+    def release_milestone(self, campaign_id: int) -> None:
+        c = self._get_campaign(campaign_id)
+        if c.status != C_FUNDED:
+            raise gl.vm.UserError("campaign is not funded")
+        milestone_index = int(c.ms_done)
+        m = self.milestones[int(c.ms_start) + milestone_index]
+        if int(m.status) != M_APPROVED:
+            raise gl.vm.UserError("milestone is not approved")
+        if self._has_pending_challenge(campaign_id, milestone_index) or self._has_pending_appeal(campaign_id):
+            raise gl.vm.UserError("open dispute blocks release")
+        m.status = u8(M_RELEASED)
+        c.released = c.released + m.amount
+        c.ms_done = u256(milestone_index + 1)
+        self._pay(c.creator, m.amount)
+        if int(c.ms_done) >= int(c.ms_total):
+            c.status = u8(C_COMPLETED)
+        self._append_audit("release_milestone", campaign_id, milestone_index,
+                           gl.message.sender_address.as_hex, "approved tranche released", m.proof_url,
+                           M_APPROVED, M_RELEASED)
+
+    @gl.public.write
+    def fail_campaign(self, campaign_id: int) -> None:
+        c = self._get_campaign(campaign_id)
+        if c.status != C_FUNDED:
+            raise gl.vm.UserError("campaign is not funded")
+        milestone_index = int(c.ms_done)
+        m = self.milestones[int(c.ms_start) + milestone_index]
+        if int(m.status) != M_REJECTED:
+            raise gl.vm.UserError("current milestone is not rejected")
+        if self._has_pending_challenge(campaign_id, milestone_index) or self._has_pending_appeal(campaign_id):
+            raise gl.vm.UserError("open dispute blocks failure")
+        c.status = u8(C_FAILED)
+        self._append_audit("fail_campaign", campaign_id, milestone_index,
+                           gl.message.sender_address.as_hex, "rejected milestone finalized", m.proof_url,
+                           C_FUNDED, C_FAILED)
 
     @gl.public.view
     def get_audit_count(self) -> int:
@@ -511,14 +612,15 @@ class Relay(gl.Contract):
         if isinstance(data, str):
             data = self._extract_json(data)
         if not isinstance(data, dict):
-            return (False, "")
+            return (False, "", "")
         raw = data.get("delivered", None)
         reason = str(data.get("reason", ""))
+        snapshot = str(data.get("evidenceExcerpt", ""))
         if isinstance(raw, bool):
-            return (raw, reason)
+            return (raw, reason, snapshot)
         if isinstance(raw, str):
-            return (raw.strip().lower() == "true", reason)
-        return (False, reason)
+            return (raw.strip().lower() == "true", reason, snapshot)
+        return (False, reason, snapshot)
 
     def _extract_json(self, text: str) -> typing.Any:
         try:
@@ -533,6 +635,28 @@ class Relay(gl.Contract):
             except (ValueError, TypeError):
                 return None
         return None
+
+    def _has_pending_challenge(self, campaign_id: int, milestone_index: int) -> bool:
+        i = 0
+        while i < len(self.challenges):
+            row = json.loads(self.challenges[i])
+            if int(row.get("campaignId", -1)) == campaign_id and int(row.get("milestoneIndex", -1)) == milestone_index and row.get("ruling") == "pending":
+                return True
+            i += 1
+        return False
+
+    def _has_pending_appeal(self, campaign_id: int) -> bool:
+        i = 0
+        while i < len(self.appeals):
+            row = json.loads(self.appeals[i])
+            if int(row.get("campaignId", -1)) == campaign_id and row.get("ruling") == "pending":
+                return True
+            i += 1
+        return False
+
+    def _require_admin(self) -> None:
+        if gl.message.sender_address != self.admin:
+            raise gl.vm.UserError("only the protocol reviewer can resolve disputes")
 
     def _pay(self, recipient: Address, amount: u256) -> None:
         if amount == u256(0):
