@@ -25,10 +25,20 @@ export async function withRetry(fn, tries = 3) {
   throw last;
 }
 
+export function normalizeReadResult(value) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch (_) {
+    return value;
+  }
+}
 export function makeReader(address) {
   return {
     read: (functionName, args = []) =>
-      withRetry(() => reader.readContract({ address, functionName, args })),
+      withRetry(() => reader.readContract({ address, functionName, args })).then(normalizeReadResult),
   };
 }
 
